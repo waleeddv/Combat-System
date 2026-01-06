@@ -28,7 +28,7 @@ local plrObjs = {}
 local CombatHandler = {}
 CombatHandler.__index = CombatHandler
 
-type self = {
+type self = { -- type self for autofill later,we won't use export since other scripts won't need this
 	Chr: Model,
 	Hum: Humanoid,
 	HRP: BasePart,
@@ -39,7 +39,7 @@ type self = {
 	CurrentAttackID: string
 }
 
-local function vignette(plr: Player)
+local function vignette(plr: Player) -- vignette function to apply a darkening effect on the players screen
 	local plrUi = plr.PlayerGui
 	local image = plrUi.Vignette.ImageLabel
 	
@@ -54,11 +54,11 @@ local function vignette(plr: Player)
 	end)
 end
 
-function CombatHandler.New(plr: Player)
+function CombatHandler.New(plr: Player) -- make a combat class here
 	local self = setmetatable({}::self, CombatHandler)
 	self.Plr = plr
 
-	local function setupCharacter(chr)
+	local function setupCharacter(chr) -- wrap it in a function so we can call it upon character death etc
 		self.Chr = chr
 		self.Hum = chr:WaitForChild("Humanoid")
 		self.HRP = chr:WaitForChild("HumanoidRootPart")
@@ -99,26 +99,30 @@ function CombatHandler.New(plr: Player)
 	return self
 end
 
-local function clean(...)
+local function clean(...) -- helper function for cleanning connections for memory leaks
 	for _, conn in ipairs({...}) do
 		if conn then conn:Disconnect() end
 	end
 end
 
 function CombatHandler:Feint()
-	if not self.Chr or not self.Chr.Parent or not self.Chr:FindFirstChildOfClass("Tool") then return end
+	if not self.Chr or not self.Chr.Parent or not self.Chr:FindFirstChildOfClass("Tool") then return end -- return in the case the chr isn't equipping a tool etc
 	self = self :: self
 
+	-- check if players feint window is open
 	local m1Feintable = self.Chr:GetAttribute("M1Feintable")
 	local critFeintable = self.Chr:GetAttribute("CritFeintable")
 	local dashFeintable = self.Chr:GetAttribute("DashFeint")
 
+	-- check if players feint is on cd
 	local canM1Feint = self.Chr:GetAttribute("CanM1Feint")
 	local canCritFeint = self.Chr:GetAttribute("CanCritFeint")
 	local candashFeint = self.Chr:GetAttribute("CanDashFeint")
 
+	-- all checks passed? we can execute the feint now
 	if (m1Feintable and canM1Feint) or (critFeintable and canCritFeint) or (candashFeint and dashFeintable) then
 
+		-- set appropriate feint to cooldown
 		if m1Feintable then
 			self.Chr:SetAttribute("CanM1Feint", false)
 			task.delay(2, function() if self.Chr then self.Chr:SetAttribute("CanM1Feint", true) end end)
@@ -130,13 +134,16 @@ function CombatHandler:Feint()
 			task.delay(2, function() if self.Chr then self.Chr:SetAttribute("CanDashFeint", true) end end)
 		end
 
+		-- stop all relevant anim tracks (this is the feint)
 		for _, track in ipairs(self.Animator:GetPlayingAnimationTracks()) do
 			if string.find(track.Name, "Combo") or track.Name == "Crit" then
 				track:Stop()
 			end
 		end
-		
+
+		-- dash for iframes (when can i stop commenting my code? this is common sense)
 		if dashFeintable then
+			-- client script will handle dash logic etc
 			event2:FireClient(self.Plr)
 			
 			local highlight = Instance.new("Highlight")
@@ -147,7 +154,8 @@ function CombatHandler:Feint()
 			task.delay(.2, function()
 				if highlight then highlight:Destroy() end
 			end)
-			
+
+			-- vfx stuff do i really need to comment this im going to be here for ages
 			local vfxClone = RepStorage:WaitForChild("VFX"):WaitForChild("CancelDodge"):Clone()
 			vfxClone.Parent = self.HRP
 			vfxMod.new(vfxClone)
@@ -159,9 +167,11 @@ function CombatHandler:Feint()
 		sound.Parent = self.HRP
 		sound:Play()
 		game:GetService("Debris"):WaitForChild(sound, sound.TimeLength)
-		
+
+		-- generating a new current attack id, this is necessary incase delays happen which is the case with combat systems and we need to differentiate each attack
 		self.CurrentAttackID = HttpService:GenerateGUID(false) 
 
+		-- setting attributes back to appropriate ones
 		self.Chr:SetAttribute("CanAttack", true)
 		self.Chr:SetAttribute("M1Feintable", false)
 		self.Chr:SetAttribute("CritFeintable", false)
@@ -173,7 +183,7 @@ end
 
 function CombatHandler:M1()
 	self = self :: self
-	if not self.Chr or not self.Chr:GetAttribute("CanM1") or not self.Chr:GetAttribute("CanAttack") then return end
+	if not self.Chr or not self.Chr:GetAttribute("CanM1") or not self.Chr:GetAttribute("CanAttack") then return end -- checks and more stuff
 	if self.Chr:GetAttribute("Stunned") then return end
 
 	local equippedTool = self.Chr:FindFirstChildOfClass("Tool"); if not equippedTool then return end
@@ -182,18 +192,18 @@ function CombatHandler:M1()
 	self.CurrentAttackID = thisAttackID
 
 	self.Chr:SetAttribute("CanAttack", false)
-	self.Chr:SetAttribute("CanM1", false)
+	self.Chr:SetAttribute("CanM1", false) -- attribute handling
 	self.Chr:SetAttribute("M1Feintable", true)
 	self.Hum.WalkSpeed = 8
 
-	local swingCLone = swing:Clone()
+	local swingCLone = swing:Clone() -- playing sound although we could've used a sound helper function
 	swingCLone.Parent = self.HRP
 	swingCLone:Play()
 	game:GetService("Debris"):AddItem(swingCLone, swingCLone.TimeLength)
 
-	local toolName = equippedTool.Name
+	local toolName = equippedTool.Name -- crucial for getting the right animation
 	local currentCombo = self.CurrentCombo
-	local attackTime = os.clock()
+	local attackTime = os.clock() -- decides whether player can attack again if they wait too long due to delays
 	self.LastAttackTime = attackTime
 
 	task.delay(4, function()
@@ -224,7 +234,7 @@ function CombatHandler:M1()
 	local hitRegistery = {}
 	local hasHitMarkerFired = false 
 
-	local s = os.clock()
+	local s = os.clock() -- wait until anim is loaded so we can use the length to determine the attacks end (this is done so that we don't get length as 0 and thus plr can spam attacks if anim isn't loaded)
 	repeat task.wait() until track.Length > 0 or os.clock() - s > 1
 	local length = track.Length > 0 and track.Length or 0.5
 
@@ -250,20 +260,20 @@ function CombatHandler:M1()
 		end
 	end)
 
-	conns.Stopped = track.Stopped:Connect(function()
+	conns.Stopped = track.Stopped:Connect(function() -- handling the feint window if plr gets attacked which is very common
 		clean(conns.Stopped, conns.Feint, conns.Hit)
 		if self.CurrentAttackID == thisAttackID then
 			self.Chr:SetAttribute("M1Feintable", false)
 		end
 	end)
 
-	conns.Feint = track:GetMarkerReachedSignal("FeintEnd"):Connect(function()
+	conns.Feint = track:GetMarkerReachedSignal("FeintEnd"):Connect(function() -- handling the feint window normally
 		if self.CurrentAttackID == thisAttackID and self.Chr then
 			self.Chr:SetAttribute("M1Feintable", false)
 		end
 	end)
 
-	conns.Hit = track:GetMarkerReachedSignal("Hit"):Connect(function()
+	conns.Hit = track:GetMarkerReachedSignal("Hit"):Connect(function() -- making the hitbox (going to start making less comments since i'll be here for ages at this rate explaining things that just repeat)
 		if hasHitMarkerFired then return end
 		hasHitMarkerFired = true
 		clean(conns.Feint)
@@ -279,7 +289,7 @@ function CombatHandler:AerialM1()
 	self = self :: self
 	if not self.Chr or not self.Chr:GetAttribute("CanM1") or not self.Chr:GetAttribute("CanAttack") then return end
 	if not self.Chr:GetAttribute("CanM1Aerial") then return end
-	if self.Chr:GetAttribute("Stunned") then return end
+	if self.Chr:GetAttribute("Stunned") then return end -- exit handling
 
 	local equippedTool = self.Chr:FindFirstChildOfClass("Tool"); if not equippedTool then return end
 	
@@ -287,7 +297,7 @@ function CombatHandler:AerialM1()
 	vfxClone2.Parent = self.HRP
 	vfxClone2.CFrame = self.HRP.CFrame
 	local weldConstraint = Instance.new("WeldConstraint")
-	weldConstraint.Parent = vfxClone2
+	weldConstraint.Parent = vfxClone2 --vfx clone handling
 	weldConstraint.Part1 = vfxClone2
 	weldConstraint.Part0 = self.HRP
 	task.delay(1.5, function()
@@ -307,7 +317,7 @@ function CombatHandler:AerialM1()
 	local animation
 	for _, v in ipairs(anims:GetDescendants()) do
 		if v:IsA("Animation") and v.Name == "AerialM1" and v.Parent.Name == toolName then animation = v break end
-	end
+	end -- finding anim
 
 	local track = self.Animator:LoadAnimation(animation)
 	if animation.Parent.Name == "Staff" then
@@ -319,7 +329,7 @@ function CombatHandler:AerialM1()
 	local vfxClone = jumpVFX:Clone()
 	vfxClone.Parent = self.HRP
 	vfxClone.CFrame = CFrame.new(0, -10, 0)
-	vfxMod.new(vfxClone)
+	vfxMod.new(vfxClone) -- more vfx
 
 --[[local lv = Instance.new("LinearVelocity")
 	local at = Instance.new("Attachment", self.HRP)
@@ -361,7 +371,7 @@ function CombatHandler:AerialM1()
 		clean(conns.Stopped, conns.Hit)
 	end)
 
-	conns.Hit = track:GetMarkerReachedSignal("Hit"):Connect(function()
+	conns.Hit = track:GetMarkerReachedSignal("Hit"):Connect(function() -- track markers
 		if hasHitMarkerFired then return end
 		hasHitMarkerFired = true
 		clean(conns.Hit)
@@ -371,10 +381,10 @@ function CombatHandler:AerialM1()
 	end)
 end
 
-function CombatHandler:Crit()
+function CombatHandler:Crit() -- crit
 	if not self.Chr or not self.Chr:GetAttribute("CanCrit") or not self.Chr:GetAttribute("CanAttack") then return end
 	if self.Chr:GetAttribute("Stunned") then return end
-
+	-- checks
 	local equippedTool = self.Chr:FindFirstChildOfClass("Tool"); if not equippedTool then return end
 
 	local thisAttackID = HttpService:GenerateGUID(false)
@@ -382,14 +392,14 @@ function CombatHandler:Crit()
 
 	self.Chr:SetAttribute("CanCrit", false)
 	self.Chr:SetAttribute("CanAttack", false)
-	self.Chr:SetAttribute("CritFeintable", true)
+	self.Chr:SetAttribute("CritFeintable", true) -- attributes
 	local toolName = equippedTool.Name
 
 	local animation
 	for _, v in ipairs(anims:GetDescendants()) do
 		if v:IsA("Animation") and v.Name == "Crit" and v.Parent.Name == toolName then animation = v break end
 	end
-
+	-- finding anim
 	local track = self.Animator:LoadAnimation(animation)
 	track:Play()
 
@@ -399,7 +409,7 @@ function CombatHandler:Crit()
 	lv.VectorVelocity = self.HRP.CFrame.LookVector * 30
 	lv.MaxForce = math.huge
 	lv.Parent = self.HRP
-
+	-- jump stuff
 	self.Hum.WalkSpeed = 0
 	self.Hum.JumpHeight = 0
 	
@@ -744,7 +754,7 @@ end
 
 event.OnServerEvent:Connect(function(plr, attack, inAir, start)
 	if not plrObjs[plr] then return end
-
+	-- event handling
 	if attack == "M1" and not inAir then
 		plrObjs[plr]:M1()
 	elseif attack == "M1" and inAir then
